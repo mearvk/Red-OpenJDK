@@ -2958,7 +2958,6 @@ they're used.
     >   `-XX:MaxRAM=2G`
 
 [`-XX:+AggressiveHeap`]{#option-XX__AggressiveHeap}
-[`-XX:+AggressiveHeap`]{#-XX__AggressiveHeap}
 :   Enables Java heap optimization. This sets various parameters to be
     optimal for long-running jobs with intensive memory allocation, based on
     the configuration of the computer (RAM and CPU). By default, the option
