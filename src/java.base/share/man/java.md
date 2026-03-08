@@ -70,7 +70,7 @@ To launch a source-file program:
     is the source of all user classes, and other class path settings are
     ignored. If you're using JAR files, then see [jar](jar.html).
 
-[`-m`]{#option-module} or `--module` *module*\[`/`*mainclass*\]
+[`-m`]{#option--module} or `--module` *module*\[`/`*mainclass*\]
 :   Executes the main class in a module specified by *mainclass* if it is
     given, or, if it is not given, the value in the *module*. In other words,
     *mainclass* can be used when it is not specified by the module, or to
