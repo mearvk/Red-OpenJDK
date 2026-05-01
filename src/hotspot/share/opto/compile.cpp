@@ -416,6 +416,7 @@ void Compile::remove_useless_node(Node* dead) {
     remove_useless_late_inlines(                &_late_inlines, dead);
     remove_useless_late_inlines(         &_string_late_inlines, dead);
     remove_useless_late_inlines(         &_boxing_late_inlines, dead);
+    remove_useless_late_inlines(         &_vector_late_inlines, dead);
     remove_useless_late_inlines(&_vector_reboxing_late_inlines, dead);
 
     if (dead->is_CallStaticJava()) {
@@ -480,6 +481,7 @@ void Compile::disconnect_useless_nodes(Unique_Node_List& useful, Unique_Node_Lis
   remove_useless_late_inlines(                &_late_inlines, useful);
   remove_useless_late_inlines(         &_string_late_inlines, useful);
   remove_useless_late_inlines(         &_boxing_late_inlines, useful);
+  remove_useless_late_inlines(         &_vector_late_inlines, useful);
   remove_useless_late_inlines(&_vector_reboxing_late_inlines, useful);
   DEBUG_ONLY(verify_graph_edges(true /*check for no_dead_code*/, root_and_safepoints);)
 }
@@ -694,6 +696,7 @@ Compile::Compile(ciEnv* ci_env, ciMethod* target, int osr_bci,
       _string_late_inlines(comp_arena(), 2, 0, nullptr),
       _boxing_late_inlines(comp_arena(), 2, 0, nullptr),
       _vector_reboxing_late_inlines(comp_arena(), 2, 0, nullptr),
+      _vector_late_inlines(comp_arena(), 2, 0, nullptr),
       _late_inlines_pos(0),
       _has_mh_late_inlines(false),
       _oom(false),
@@ -2217,6 +2220,12 @@ void Compile::inline_incrementally(PhaseIterGVN& igvn) {
     print_method(PHASE_INCREMENTAL_INLINE_STEP, 3);
 
     if (failing())  return;
+
+    if (_late_inlines.length() == 0 && _vector_late_inlines.length() > 0) {
+      while (_vector_late_inlines.length() > 0) {
+        add_late_inline(_vector_late_inlines.pop());
+      }
+    }
   }
 
   igvn_worklist()->ensure_empty(); // should be done with igvn

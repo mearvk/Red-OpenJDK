@@ -841,6 +841,9 @@
   product(bool, EnableVectorAggressiveReboxing, false, EXPERIMENTAL,        \
           "Enables aggressive reboxing of vectors")                         \
                                                                             \
+  product(bool, InlineVectorFallback, true, DIAGNOSTIC,                     \
+          "Inline fallback implementation of failed vector intrinsics")     \
+                                                                            \
   product(bool, UseTypeSpeculation, true,                                   \
           "Speculatively propagate types from profiles")                    \
                                                                             \
