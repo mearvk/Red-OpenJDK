@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2025, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,7 +28,6 @@
  * @bug 8298420
  * @library /test/lib
  * @summary Testing basic PEM API encoding
- * @enablePreview
  * @modules java.base/sun.security.util
  * @run main PEMEncoderTest PBEWithHmacSHA256AndAES_128
  * @run main/othervm -Djava.security.properties=${test.src}/java.security-anotherAlgo
@@ -56,7 +55,7 @@ import static jdk.test.lib.Asserts.assertThrows;
 
 public class PEMEncoderTest {
 
-    static Map<String, DEREncodable> keymap;
+    static Map<String, BinaryEncodable> keymap;
     static String pkcs8DefaultAlgExpect;
 
     public static void main(String[] args) throws Exception {
@@ -150,10 +149,26 @@ public class PEMEncoderTest {
             throw new AssertionError("encoder tried to encrypt " +
                 "an EncryptedPrivateKeyInfo.");
         } catch (IllegalArgumentException _) {}
+
+        // Check PEM string exact
+        String expected = encoder.encodeToString(decoder.decode(
+            PEMData.ecsecp256.pem()));
+        PEMData.Entry e = PEMData.ecsecp256.makeCRLF("ecsecp256CRLF");
+        System.out.println("Exact PEM String check with CRLF only PEM:");
+        PEMData.checkResultsExact(expected, encoder.encodeToString(
+            decoder.decode(e.pem())));
+        System.out.println("Exact PEM String check with CR only PEM:");
+        e = PEMData.ecsecp256.makeCR("ecsecp256CR");
+        PEMData.checkResultsExact(expected, encoder.encodeToString(
+            decoder.decode(e.pem())));
+        System.out.println("Exact PEM String check with NoCRLF only PEM:");
+        e = PEMData.ecsecp256.makeValidNoCRLF("ecsecp256ValidNoCRLF");
+        PEMData.checkResultsExact(expected, encoder.encodeToString(
+            decoder.decode(e.pem())));
     }
 
     static Map generateObjKeyMap(List<PEMData.Entry> list) {
-        Map<String, DEREncodable> keymap = new HashMap<>();
+        Map<String, BinaryEncodable> keymap = new HashMap<>();
         PEMDecoder pemd = PEMDecoder.of();
         for (PEMData.Entry entry : list) {
             try {
@@ -237,7 +252,7 @@ public class PEMEncoderTest {
         try {
             encoder.encodeToString(keymap.get(key));
         } catch (RuntimeException e) {
-            throw new AssertionError("Encrypted encoder failured with " +
+            throw new AssertionError("Encrypted encoder failed with " +
                 entry.name(), e);
         }
 

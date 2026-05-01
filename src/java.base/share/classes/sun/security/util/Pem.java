@@ -29,6 +29,7 @@ import sun.security.pkcs.PKCS8Key;
 import sun.security.x509.AlgorithmId;
 
 import javax.crypto.EncryptedPrivateKeyInfo;
+import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import java.io.*;
@@ -62,10 +63,10 @@ public class Pem {
     private static final Pattern LINE_WRAP_64_PATTERN;
 
     // Lazy initialized PBES2 OID value
-    private static ObjectIdentifier PBES2OID;
+    private static volatile ObjectIdentifier PBES2OID;
 
     // Lazy initialized singleton encoder.
-    private static Base64.Encoder b64Encoder;
+    private static volatile Base64.Encoder b64Encoder;
 
     static {
         String algo = Security.getProperty("jdk.epkcs8.defaultAlgorithm");
@@ -162,13 +163,10 @@ public class Pem {
      * @param shortHeader if true, the hyphen length is 4 because the first
      *                    hyphen is assumed to have been read.  This is needed
      *                    for the CertificateFactory X509 implementation.
-     * @return a new PEMRecord
+     * @return a PEM instance
      * @throws IOException on IO errors or PEM syntax errors that leave
      * the read position not at the end of a PEM block
      * @throws EOFException when at the unexpected end of the stream
-     * @throws IllegalArgumentException when a PEM syntax error occurs,
-     * but the read position in the stream is at the end of the block, so
-     * future reads can be successful.
      */
     public static PEM readPEM(InputStream is, boolean shortHeader)
         throws IOException {
@@ -219,10 +217,10 @@ public class Pem {
 
         // Verify header ending with 5 hyphens.
         do {
-            switch (is.read()) {
-                case '-' -> hyphen++;
-                default ->
-                    throw new IOException("Incomplete header");
+            if (is.read() == '-') {
+                hyphen++;
+            } else {
+                throw new IOException("Incomplete header");
             }
         } while (hyphen < 5);
 
@@ -255,15 +253,23 @@ public class Pem {
         }
 
         // Read data until we find the first footer hyphen.
+        // CR & LF are allowed to support legacy PEM formats (ie: encrypted PKCS1)
         do {
             switch (c = is.read()) {
                 case -1 ->
                     throw new EOFException("Incomplete header");
                 case '-' -> hyphen++;
                 case '\s', '\t', '\r', '\n' -> {} // skip whitespace and tab
-                default -> sb.append((char) c);
+                default -> {
+                    // If reading a legacy format, allow for one dash
+                    if (hyphen == 1) {
+                        hyphen = 0;
+                        sb.append('-');
+                    }
+                    sb.append((char) c);
+                }
             }
-        } while (hyphen == 0);
+        } while (hyphen < 2);
 
         String data = sb.toString();
 
@@ -331,14 +337,15 @@ public class Pem {
             preData = Arrays.copyOf(os.toByteArray(), os.size() - 6);
         }
 
-        return new PEM(typeConverter(headerType), data, preData);
+        return (preData == null) ? new PEM(typeConverter(headerType), data) :
+            new PEM(typeConverter(headerType), data, preData);
     }
 
     public static PEM readPEM(InputStream is) throws IOException {
         return readPEM(is, false);
     }
 
-    private static String pemEncoded(String type, String base64) {
+    public static String pemEncoded(String type, String base64) {
         return
             "-----BEGIN " + type + "-----\r\n" +
             base64 + (!base64.endsWith("\n") ? "\r\n" : "") +
@@ -346,57 +353,49 @@ public class Pem {
     }
 
     /**
-     * Construct a String-based encoding based off the type.  leadingData
-     * is not used with this method.
-     * @return PEM in a string
+     * Construct a String-based PEM encoding with the given type and binary
+     * data.
      */
     public static String pemEncoded(String type, byte[] der) {
-        if (b64Encoder == null) {
-            b64Encoder = Base64.getMimeEncoder(64, CRLF);
-        }
-        return pemEncoded(type, b64Encoder.encodeToString(der));
+        return pemEncoded(type, base64Encode(der));
     }
 
     /**
-     * Construct a String-based encoding based off the type.  leadingData
-     * is not used with this method.
-     * @return PEM in a string
+     * Construct a String-based PEM encoding from the PEM object given.
+     * leadingData is not used with this method.
      */
     public static String pemEncoded(PEM pem) {
-        String p = LINE_WRAP_64_PATTERN.matcher(pem.content()).replaceAll("$1\r\n");
+        String p = LINE_WRAP_64_PATTERN.matcher(pem.content()).
+            replaceAll("$1\r\n");
         return pemEncoded(pem.type(), p);
     }
 
-    /*
-     * Get PKCS8 encoding from an encrypted private key encoding.
-     */
-    public static byte[] decryptEncoding(byte[] encoded, char[] password)
-        throws GeneralSecurityException {
-        EncryptedPrivateKeyInfo ekpi;
-
-        Objects.requireNonNull(password, "password cannot be null");
-        PBEKeySpec keySpec = new PBEKeySpec(password);
-        try {
-            ekpi = new EncryptedPrivateKeyInfo(encoded);
-            return decryptEncoding(ekpi, keySpec);
-        } catch (IOException e) {
-            throw new IllegalArgumentException(e);
-        } finally {
-            keySpec.clearPassword();
+    public static String base64Encode(byte[] der) {
+        if (b64Encoder == null) {
+            b64Encoder = Base64.getMimeEncoder(64, CRLF);
         }
+        return b64Encoder.encodeToString(der);
     }
 
-    public static byte[] decryptEncoding(EncryptedPrivateKeyInfo ekpi, PBEKeySpec keySpec)
-        throws NoSuchAlgorithmException, InvalidKeyException {
+    /**
+     * Decrypt the EncryptedPrivateKeyInfo with the given keySpec and
+     * return the PKCS#8 byte array
+     */
+    public static byte[] decryptEncoding(EncryptedPrivateKeyInfo ekpi,
+        PBEKeySpec keySpec) throws NoSuchAlgorithmException,
+        InvalidKeyException {
 
         PKCS8EncodedKeySpec p8KeySpec = null;
+        SecretKeyFactory skf = SecretKeyFactory.getInstance(ekpi.getAlgName());
+        SecretKey sk = null;
         try {
-            SecretKeyFactory skf = SecretKeyFactory.getInstance(ekpi.getAlgName());
-            p8KeySpec = ekpi.getKeySpec(skf.generateSecret(keySpec));
+            sk = skf.generateSecret(keySpec);
+            p8KeySpec = ekpi.getKeySpec(sk);
             return p8KeySpec.getEncoded();
         } catch (InvalidKeySpecException e) {
             throw new InvalidKeyException(e);
         } finally {
+            KeyUtil.destroySecretKeys(sk);
             KeyUtil.clear(p8KeySpec);
         }
     }
@@ -412,7 +411,7 @@ public class Pem {
      *             return a PrivateKey
      * @param provider KeyFactory provider
      */
-    public static DEREncodable toDEREncodable(byte[] encoded, boolean pair,
+    public static BinaryEncodable toPKCS8Encodable(byte[] encoded, boolean pair,
         Provider provider) throws InvalidKeyException {
 
         PrivateKey privKey;
@@ -467,7 +466,7 @@ public class Pem {
         } finally {
             KeyUtil.clear(p8KeySpec, p8key);
         }
-        if (pair && pubKey != null) {
+        if (pubKey != null) {
             return new KeyPair(pubKey, privKey);
         }
         return privKey;
