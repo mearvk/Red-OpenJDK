@@ -1352,7 +1352,7 @@ public abstract class HtmlDocletWriter {
             }
         };
         CommentHelper ch = utils.getCommentHelper(element);
-        configuration.tagletManager.checkTags(element, trees);
+        configuration.tagletManager.checkTags(element, trees, true);
         commentRemoved = false;
         List<Name> openTags = new ArrayList<>();
 
