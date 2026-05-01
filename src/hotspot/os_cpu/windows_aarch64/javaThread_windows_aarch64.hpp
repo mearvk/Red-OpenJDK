@@ -46,8 +46,12 @@ private:
   bool pd_get_top_frame(frame* fr_addr, void* ucontext, bool isInJava);
 public:
 
-  static Thread *aarch64_get_thread_helper() {
-     return Thread::current();
-  }
+  static Thread *aarch64_get_thread_helper();
+
+  // Compute the offset of `Thread::_thr_current` in the thread-local storage
+  // and store in the global variable `_jvm_thr_current_tls_offset`.  This
+  // offset is then used by the assembly code implementation of
+  // `aarch64_get_thread_helper()`.
+  static void initialize_thr_current_tls_offset();
 
 #endif // OS_CPU_WINDOWS_AARCH64_JAVATHREAD_WINDOWS_AARCH64_HPP

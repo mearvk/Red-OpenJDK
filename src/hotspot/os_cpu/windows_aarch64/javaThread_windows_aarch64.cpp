@@ -26,6 +26,13 @@
 #include "runtime/frame.inline.hpp"
 #include "runtime/javaThread.hpp"
 
+// CRT-provided TLS slot for this module (jvm.dll), set by the OS loader.
+extern "C" unsigned long _tls_index;
+
+// TLS offset read by the assembly code in `aarch64_get_thread_helper()`.  This
+// offset is initialized by `initialize_thr_current_tls_offset()`.
+extern "C" int64_t _jvm_thr_current_tls_offset = 0;
+
 frame JavaThread::pd_last_frame() {
   assert(has_last_Java_frame(), "must have last_Java_sp() when suspended");
   vmassert(_anchor.last_Java_pc() != nullptr, "not walkable");
@@ -87,3 +94,33 @@ bool JavaThread::pd_get_top_frame(frame* fr_addr, void* ucontext, bool isInJava)
 }
 
 void JavaThread::cache_global_variables() { }
+
+void initialize_thr_current_tls_offset() {
+  JavaThread::initialize_thr_current_tls_offset();
+}
+
+void JavaThread::initialize_thr_current_tls_offset() {
+  static bool init_thr_tls_offset = []() {
+    char* tebPointer = (char*)NtCurrentTeb();
+
+    // 0x58 is the offset of ThreadLocalStoragePointer within the TEB.  This is
+    // a stable Windows ABI constant but is not exposed in the SDK's minimal
+    // _TEB struct.
+    void** tls_array = *(void***)(tebPointer + 0x58);
+    char* curr_ptr = (char*)&Thread::_thr_current;
+    char* tls_block = (char*)tls_array[_tls_index];
+
+    // Compute the offset of Thread::_thr_current within this module's TLS
+    // block.  Unlike ELF, which provides `tlsdesc` relocations that lets
+    // assembly code resolve TLS variables symbolically at link/load time,
+    // Windows PE/COFF has no equivalent mechanism for armasm64.  So we compute
+    // the offset here in C++ (where the compiler knows how to access
+    // __declspec(thread) variables) and store it in a plain global that the
+    // assembly can load directly.  In subsequent calls to
+    // `aarch64_get_thread_helper()`, the assembly will read the TEB to find the
+    // TLS block and then add this offset to find `Thread::_thr_current`.
+    _jvm_thr_current_tls_offset = (int64_t)(curr_ptr - tls_block);
+
+    return true;
+  }();
+}
