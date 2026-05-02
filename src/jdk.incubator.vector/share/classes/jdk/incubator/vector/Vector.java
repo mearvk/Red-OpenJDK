@@ -3853,6 +3853,19 @@ public abstract sealed class Vector<E> extends jdk.internal.vm.vector.VectorSupp
     public abstract DoubleVector reinterpretAsDoubles();
 
     /**
+     * Reinterprets this vector as a vector of the same shape
+     * and contents but a lane type of {@code Float16},
+     * where the lanes are assembled from successive bytes
+     * according to little-endian order.
+     * It is a convenience method for the expression
+     * {@code reinterpretShape(species().withLanes(Float16.class))}.
+     * It may be considered an inverse to {@link Vector#reinterpretAsBytes()}.
+     *
+     * @return a {@code Float16Vector} with the same shape and information content
+     */
+    public abstract Float16Vector reinterpretAsFloat16s();
+
+    /**
      * Views this vector as a vector of the same shape, length, and
      * contents, but a lane type that is not a floating-point type.
      *
